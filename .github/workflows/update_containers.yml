@@ -1,0 +1,63 @@
+name: Update Servers
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force update all servers'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run update script
+        id: update
+        run: |
+          FORCE_FLAG=""
+          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
+            FORCE_FLAG="--force"
+          fi
+          uv run scripts/update_containers.py $FORCE_FLAG
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit and push changes
+        id: push
+        if: steps.update.outputs.has_updates == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update server versions"
+            git push
+            echo "pushed=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes to commit"
+            echo "pushed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Publish Workflow
+        if: steps.push.outputs.pushed == 'true'
+        run: |
+          gh workflow run publish.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

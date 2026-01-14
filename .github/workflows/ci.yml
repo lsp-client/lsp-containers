@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/ContainerFile'
+      - 'registry.toml'
+      - 'scripts/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/ContainerFile'
+      - 'registry.toml'
+      - 'scripts/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: set-matrix
+        run: |
+          IMAGES=$(python3 scripts/get_changed_images.py)
+          echo "matrix=$IMAGES" >> $GITHUB_OUTPUT
+
+  build-and-test:
+    needs: setup
+    if: needs.setup.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.setup.outputs.matrix) }}
+        platform: [linux/amd64, linux/arm64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.image }}
+          file: ./${{ matrix.image }}/ContainerFile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: lsp-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test image
+        run: |
+          # Test if the image can run on the target architecture.
+          # Some LSPs don't support --version or --help and exit with non-zero status.
+          # We try common flags, but fall back to a simple sh -c "true" to verify execution.
+          docker run --rm --platform ${{ matrix.platform }} lsp-test --version || \
+          docker run --rm --platform ${{ matrix.platform }} lsp-test --help || \
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint sh lsp-test -c "true"
+
+      - name: Check image size
+        run: |
+          echo "Image size for ${{ matrix.image }} on ${{ matrix.platform }}:"
+          docker images lsp-test --format "{{.Size}}"

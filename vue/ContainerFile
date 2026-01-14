@@ -1,0 +1,21 @@
+ARG VERSION=3.2.1
+FROM docker.io/library/node:22-alpine AS builder
+ARG VERSION
+WORKDIR /app
+RUN npm install @vue/language-server@${VERSION} typescript && \
+    npm prune --production
+
+FROM docker.io/library/node:22-alpine
+ARG VERSION
+LABEL org.opencontainers.image.title="Vue LSP" \
+      org.opencontainers.image.description="Vue Language Server" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/lsp-client/containers" \
+      org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /workspace
+ENTRYPOINT ["vue-language-server", "--stdio"]
