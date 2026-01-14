@@ -7,6 +7,11 @@ on:
       - '**/ContainerFile'
       - 'registry.toml'
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Force build all images'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -24,6 +29,8 @@ jobs:
         run: |
           IMAGES=$(python3 scripts/get_changed_images.py)
           echo "matrix=$IMAGES" >> $GITHUB_OUTPUT
+        env:
+          FORCE_ALL: ${{ github.event.inputs.force_all }}
 
   build-and-push:
     needs: setup

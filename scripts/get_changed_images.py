@@ -17,6 +17,20 @@ def get_changed_files(base_sha, head_sha, triple_dot=False):
 
 
 def main():
+    # Check if force_all is set
+    force_all = os.environ.get("FORCE_ALL", "false").lower() == "true"
+
+    if force_all:
+        # Return all images
+        all_images = [
+            d.name
+            for d in Path(".").iterdir()
+            if d.is_dir() and (d / "ContainerFile").exists()
+        ]
+        all_images.sort()
+        print(json.dumps(all_images))
+        return
+
     event_name = os.environ.get("GITHUB_EVENT_NAME")
 
     if event_name == "pull_request":
